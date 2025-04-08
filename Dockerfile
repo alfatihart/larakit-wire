@@ -1,32 +1,35 @@
-FROM php:8.2-apache
+FROM unit:1.34.1-php8.3
 
-# Install dependencies
-RUN apt-get update && \
-    apt-get install -y \
-    libzip-dev \
-    zip
+RUN apt update && apt install -y \
+    curl unzip git libicu-dev libzip-dev libpng-dev libjpeg-dev libfreetype6-dev libssl-dev \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install -j$(nproc) pcntl opcache pdo pdo_mysql intl zip gd exif ftp bcmath \
+    && pecl install redis \
+    && docker-php-ext-enable redis
 
-# Enable mod_rewrite
-RUN a2enmod rewrite
+RUN echo "opcache.enable=1" > /usr/local/etc/php/conf.d/custom.ini \
+    && echo "opcache.jit=tracing" >> /usr/local/etc/php/conf.d/custom.ini \
+    && echo "opcache.jit_buffer_size=256M" >> /usr/local/etc/php/conf.d/custom.ini \
+    && echo "memory_limit=512M" > /usr/local/etc/php/conf.d/custom.ini \
+    && echo "upload_max_filesize=64M" >> /usr/local/etc/php/conf.d/custom.ini \
+    && echo "post_max_size=64M" >> /usr/local/etc/php/conf.d/custom.ini
 
-# Install PHP extensions
-RUN docker-php-ext-install pdo_mysql zip
+COPY --from=composer:latest /usr/bin/composer /usr/local/bin/composer
 
-ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
-RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf
-RUN sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
-
-# Copy the application code
-COPY . /var/www/html
-
-# Set the working directory
 WORKDIR /var/www/html
 
-# Install composer
-RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+RUN mkdir -p /var/www/html/storage /var/www/html/bootstrap/cache
 
-# Install project dependencies
-RUN composer install
+RUN chown -R unit:unit /var/www/html/storage bootstrap/cache && chmod -R 775 /var/www/html/storage
 
-# Set permissions
-RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
+COPY . .
+
+RUN chown -R unit:unit storage bootstrap/cache && chmod -R 775 storage bootstrap/cache
+
+RUN composer install --prefer-dist --optimize-autoloader --no-interaction
+
+COPY unit.json /docker-entrypoint.d/unit.json
+
+EXPOSE 8000
+
+CMD ["unitd", "--no-daemon"]
