@@ -2,6 +2,14 @@ FROM unit:1.34.1-php8.3
 
 RUN apt update && apt install -y \
     curl unzip git libicu-dev libzip-dev libpng-dev libjpeg-dev libfreetype6-dev libssl-dev \
+    # Install Node.js repository and tools
+    gnupg \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list \
+    && apt update \
+    && apt install -y nodejs \
+    # Continue with PHP extensions
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install -j$(nproc) pcntl opcache pdo pdo_mysql intl zip gd exif ftp bcmath \
     && pecl install redis \
@@ -27,6 +35,9 @@ COPY . .
 RUN chown -R unit:unit storage bootstrap/cache && chmod -R 775 storage bootstrap/cache
 
 RUN composer install --prefer-dist --optimize-autoloader --no-interaction
+
+# Install npm dependencies and build assets
+RUN npm ci && npm run build
 
 COPY unit.json /docker-entrypoint.d/unit.json
 
